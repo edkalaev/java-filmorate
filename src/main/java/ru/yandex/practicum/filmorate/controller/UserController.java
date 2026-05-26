@@ -1,12 +1,12 @@
 package ru.yandex.practicum.filmorate.controller;
 
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import ru.yandex.practicum.filmorate.exception.ConditionsNotMetException;
 import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.model.User;
-import java.time.LocalDate;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,6 +15,7 @@ import java.util.Map;
 @RequestMapping("/users")
 public class UserController {
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
+    private static final long INITIAL_USER_ID = 0L;
 
     private final Map<Long, User> users = new HashMap<>();
 
@@ -24,20 +25,19 @@ public class UserController {
     }
 
     @PostMapping
-    public User createUser(@RequestBody User user) {
-        validateUser(user);
+    public User createUser(@Valid @RequestBody User user) {
+        setDefaultNameIfEmpty(user);
 
         user.setId(getUserId());
         users.put(user.getId(), user);
 
         log.info("Добавлен пользователь: id={}, login={}", user.getId(), user.getLogin());
 
-
         return user;
     }
 
     @PutMapping
-    public User updateUser(@RequestBody User newUser) {
+    public User updateUser(@Valid @RequestBody User newUser) {
         if (newUser.getId() == null) {
             log.warn("Ошибка обновления пользователя: id не указан");
             throw new ConditionsNotMetException("Id должен быть указан");
@@ -48,39 +48,19 @@ public class UserController {
             throw new NotFoundException("Пользователь с id = " + newUser.getId() + " не найден");
         }
 
-        validateUser(newUser);
+        setDefaultNameIfEmpty(newUser);
 
-        User oldUser = users.get(newUser.getId());
+        users.put(newUser.getId(), newUser);
 
-        oldUser.setEmail(newUser.getEmail());
-        oldUser.setLogin(newUser.getLogin());
-        oldUser.setName(newUser.getName());
-        oldUser.setBirthday(newUser.getBirthday());
+        log.info("Обновлён пользователь: id={}, login={}", newUser.getId(), newUser.getLogin());
 
-        log.info("Обновлён пользователь: id={}, login={}", oldUser.getId(), oldUser.getLogin());
-
-        return oldUser;
+        return newUser;
     }
 
-    private void validateUser(User user) {
-        if (user.getEmail() == null || user.getEmail().isBlank() || !user.getEmail().contains("@")) {
-            log.warn("Ошибка валидации пользователя: некорректный email={}", user.getEmail());
-            throw new ConditionsNotMetException("Электронная почта не может быть пустой и должна содержать символ @");
-        }
-
-        if (user.getLogin() == null || user.getLogin().isBlank() || user.getLogin().contains(" ")) {
-            log.warn("Ошибка валидации пользователя: некорректный login={}", user.getLogin());
-            throw new ConditionsNotMetException("Логин не может быть пустым и содержать пробелы");
-        }
-
+    private void setDefaultNameIfEmpty(User user) {
         if (user.getName() == null || user.getName().isBlank()) {
             log.info("Имя пользователя пустое, вместо него будет использован login={}", user.getLogin());
             user.setName(user.getLogin());
-        }
-
-        if (user.getBirthday() == null || user.getBirthday().isAfter(LocalDate.now())) {
-            log.warn("Ошибка валидации пользователя: некорректная дата рождения {}", user.getBirthday());
-            throw new ConditionsNotMetException("Дата рождения не может быть в будущем");
         }
     }
 
@@ -89,8 +69,8 @@ public class UserController {
                 .stream()
                 .mapToLong(id -> id)
                 .max()
-                .orElse(0);
+                .orElse(INITIAL_USER_ID);
 
-        return ++currentMaxId;
+        return currentMaxId + 1;
     }
 }

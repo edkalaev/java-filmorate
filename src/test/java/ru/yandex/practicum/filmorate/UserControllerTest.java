@@ -33,54 +33,6 @@ class UserControllerTest {
     }
 
     @Test
-    void shouldThrowExceptionWhenEmailIsNull() {
-        User user = makeValidUser();
-        user.setEmail(null);
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenEmailIsEmpty() {
-        User user = makeValidUser();
-        user.setEmail("");
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenEmailDoesNotContainAtSymbol() {
-        User user = makeValidUser();
-        user.setEmail("mail.ru");
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenLoginIsNull() {
-        User user = makeValidUser();
-        user.setLogin(null);
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenLoginIsEmpty() {
-        User user = makeValidUser();
-        user.setLogin("");
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenLoginContainsSpace() {
-        User user = makeValidUser();
-        user.setLogin("my login");
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
     void shouldUseLoginAsNameWhenNameIsNull() {
         User user = makeValidUser();
         user.setName(null);
@@ -101,29 +53,6 @@ class UserControllerTest {
     }
 
     @Test
-    void shouldCreateUserWhenBirthdayIsToday() {
-        User user = makeValidUser();
-        user.setBirthday(LocalDate.now());
-
-        assertDoesNotThrow(() -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenBirthdayIsInFuture() {
-        User user = makeValidUser();
-        user.setBirthday(LocalDate.now().plusDays(1));
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenRequestBodyIsEmpty() {
-        User user = new User();
-
-        assertThrows(ConditionsNotMetException.class, () -> userController.createUser(user));
-    }
-
-    @Test
     void shouldUpdateUserWithValidFields() {
         User user = makeValidUser();
         User createdUser = userController.createUser(user);
@@ -137,6 +66,7 @@ class UserControllerTest {
 
         User result = assertDoesNotThrow(() -> userController.updateUser(updatedUser));
 
+        assertEquals(createdUser.getId(), result.getId());
         assertEquals("new@mail.ru", result.getEmail());
         assertEquals("newLogin", result.getLogin());
         assertEquals("New name", result.getName());

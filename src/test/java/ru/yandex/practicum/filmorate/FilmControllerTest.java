@@ -33,85 +33,6 @@ class FilmControllerTest {
     }
 
     @Test
-    void shouldThrowExceptionWhenFilmNameIsEmpty() {
-        Film film = makeValidFilm();
-        film.setName("");
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenFilmNameIsNull() {
-        Film film = makeValidFilm();
-        film.setName(null);
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldCreateFilmWhenDescriptionLengthIsExactly200() {
-        Film film = makeValidFilm();
-        film.setDescription("a".repeat(200));
-
-        assertDoesNotThrow(() -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenDescriptionLengthIsMoreThan200() {
-        Film film = makeValidFilm();
-        film.setDescription("a".repeat(201));
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldCreateFilmWhenReleaseDateIsBoundaryDate() {
-        Film film = makeValidFilm();
-        film.setReleaseDate(LocalDate.of(1895, 12, 28));
-
-        assertDoesNotThrow(() -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenReleaseDateIsBeforeBoundaryDate() {
-        Film film = makeValidFilm();
-        film.setReleaseDate(LocalDate.of(1895, 12, 27));
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldCreateFilmWhenDurationIsPositive() {
-        Film film = makeValidFilm();
-        film.setDuration(1);
-
-        assertDoesNotThrow(() -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenDurationIsZero() {
-        Film film = makeValidFilm();
-        film.setDuration(0);
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenDurationIsNegative() {
-        Film film = makeValidFilm();
-        film.setDuration(-1);
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
-    void shouldThrowExceptionWhenRequestBodyIsEmpty() {
-        Film film = new Film();
-
-        assertThrows(ConditionsNotMetException.class, () -> filmController.createFilm(film));
-    }
-
-    @Test
     void shouldUpdateFilmWithValidFields() {
         Film film = makeValidFilm();
         Film createdFilm = filmController.createFilm(film);
@@ -125,6 +46,7 @@ class FilmControllerTest {
 
         Film result = assertDoesNotThrow(() -> filmController.updateFilm(updatedFilm));
 
+        assertEquals(createdFilm.getId(), result.getId());
         assertEquals("Updated film", result.getName());
         assertEquals("Updated description", result.getDescription());
         assertEquals(LocalDate.of(2001, 1, 1), result.getReleaseDate());
