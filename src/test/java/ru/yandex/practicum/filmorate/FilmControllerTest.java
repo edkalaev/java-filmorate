@@ -6,6 +6,10 @@ import ru.yandex.practicum.filmorate.controller.FilmController;
 import ru.yandex.practicum.filmorate.exception.ConditionsNotMetException;
 import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.model.Film;
+import ru.yandex.practicum.filmorate.service.FilmService;
+import ru.yandex.practicum.filmorate.storage.film.InMemoryFilmStorage;
+import ru.yandex.practicum.filmorate.storage.user.InMemoryUserStorage;
+
 import java.time.LocalDate;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,7 +20,12 @@ class FilmControllerTest {
 
     @BeforeEach
     void beforeEach() {
-        filmController = new FilmController();
+        filmController = new FilmController(
+                new FilmService(
+                        new InMemoryFilmStorage(),
+                        new InMemoryUserStorage()
+                )
+        );
     }
 
     @Test
