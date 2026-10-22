@@ -31,16 +31,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:catalog-api-test;DB_CLOSE_DELAY=-1")
 @AutoConfigureMockMvc
 class CatalogApiTest {
-    private static final String FILM_REQUEST = """
-            {
-              "name": "Test film",
-              "description": "Description",
-              "releaseDate": "2000-01-01",
-              "duration": 120,
-              "mpa": {"id": 3},
-              "genres": [{"id": 2}, {"id": 1}, {"id": 1}]
-            }
-            """;
+    private static final String FILM_REQUEST =
+            "{\"name\":\"Test film\","
+                    + "\"description\":\"Description\","
+                    + "\"releaseDate\":\"2000-01-01\","
+                    + "\"duration\":120,"
+                    + "\"mpa\":{\"id\":3},"
+                    + "\"genres\":[{\"id\":2},{\"id\":1},{\"id\":1}]}";
 
     @Autowired
     private MockMvc mockMvc;
@@ -62,11 +59,11 @@ class CatalogApiTest {
         JsonNode genres = read(mockMvc.perform(get("/genres"))
                 .andExpect(status().isOk()).andReturn());
 
-        assertEquals(objectMapper.readTree("""
-                [{"id":1,"name":"Комедия"}, {"id":2,"name":"Драма"},
-                 {"id":3,"name":"Мультфильм"}, {"id":4,"name":"Триллер"},
-                 {"id":5,"name":"Документальный"}, {"id":6,"name":"Боевик"}]
-                """), genres);
+        assertEquals(objectMapper.readTree(
+                "[{\"id\":1,\"name\":\"Комедия\"},{\"id\":2,\"name\":\"Драма\"},"
+                        + "{\"id\":3,\"name\":\"Мультфильм\"},{\"id\":4,\"name\":\"Триллер\"},"
+                        + "{\"id\":5,\"name\":\"Документальный\"},{\"id\":6,\"name\":\"Боевик\"}]"
+        ), genres);
     }
 
     @Test
@@ -74,11 +71,11 @@ class CatalogApiTest {
         JsonNode ratings = read(mockMvc.perform(get("/mpa"))
                 .andExpect(status().isOk()).andReturn());
 
-        assertEquals(objectMapper.readTree("""
-                [{"id":1,"name":"G"}, {"id":2,"name":"PG"},
-                 {"id":3,"name":"PG-13"}, {"id":4,"name":"R"},
-                 {"id":5,"name":"NC-17"}]
-                """), ratings);
+        assertEquals(objectMapper.readTree(
+                "[{\"id\":1,\"name\":\"G\"},{\"id\":2,\"name\":\"PG\"},"
+                        + "{\"id\":3,\"name\":\"PG-13\"},{\"id\":4,\"name\":\"R\"},"
+                        + "{\"id\":5,\"name\":\"NC-17\"}]"
+        ), ratings);;
     }
 
     @ParameterizedTest
