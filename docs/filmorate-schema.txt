@@ -1,4 +1,5 @@
 
+// Схема в формате DBML. Вставьте содержимое файла в редактор https://dbdiagram.io
 Table users {
   id bigint [pk, increment]
   email varchar [not null]
