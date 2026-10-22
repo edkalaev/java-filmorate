@@ -1,7 +1,10 @@
 package ru.yandex.practicum.filmorate.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.yandex.practicum.filmorate.exception.ConditionsNotMetException;
 import ru.yandex.practicum.filmorate.model.Film;
 import ru.yandex.practicum.filmorate.storage.film.FilmStorage;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
@@ -17,8 +20,8 @@ public class FilmService {
     private final UserStorage userStorage;
 
     @Autowired
-    public FilmService(FilmStorage filmStorage,
-                       UserStorage userStorage) {
+    public FilmService(@Qualifier("filmDbStorage") FilmStorage filmStorage,
+                       @Qualifier("userDbStorage") UserStorage userStorage) {
         this.filmStorage = filmStorage;
         this.userStorage = userStorage;
     }
@@ -35,10 +38,17 @@ public class FilmService {
         return filmStorage.create(film);
     }
 
+    @Transactional
     public Film update(Film film) {
+        if (film.getId() == null) {
+            throw new ConditionsNotMetException("Id должен быть указан");
+        }
+        Film storedFilm = filmStorage.getFilmById(film.getId());
+        film.setLikes(storedFilm.getLikes());
         return filmStorage.update(film);
     }
 
+    @Transactional
     public void addLike(long filmId, long userId) {
         Film film = filmStorage.getFilmById(filmId);
 
@@ -49,6 +59,7 @@ public class FilmService {
         filmStorage.update(film);
     }
 
+    @Transactional
     public void removeLike(long filmId, long userId) {
         Film film = filmStorage.getFilmById(filmId);
 
