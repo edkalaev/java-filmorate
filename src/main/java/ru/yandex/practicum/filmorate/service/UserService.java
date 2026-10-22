@@ -1,7 +1,11 @@
 package ru.yandex.practicum.filmorate.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.yandex.practicum.filmorate.exception.ConditionsNotMetException;
+import ru.yandex.practicum.filmorate.model.FriendshipStatus;
 import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 
@@ -15,7 +19,7 @@ public class UserService {
     private final UserStorage userStorage;
 
     @Autowired
-    public UserService(UserStorage userStorage) {
+    public UserService(@Qualifier("userDbStorage") UserStorage userStorage) {
         this.userStorage = userStorage;
     }
 
@@ -35,26 +39,38 @@ public class UserService {
         return userStorage.getUserById(id);
     }
 
+    @Transactional
     public void addFriend(long userId, long friendId) {
+        if (userId == friendId) {
+            throw new ConditionsNotMetException("Нельзя добавить себя в друзья");
+        }
+
         User user = userStorage.getUserById(userId);
         User friend = userStorage.getUserById(friendId);
 
-        user.getFriends().add(friendId);
-        friend.getFriends().add(userId);
+        if (friend.getFriends().containsKey(userId)) {
+            user.getFriends().put(friendId, FriendshipStatus.CONFIRMED);
+            friend.getFriends().put(userId, FriendshipStatus.CONFIRMED);
+            userStorage.updateUser(friend);
+        } else {
+            user.getFriends().put(friendId, FriendshipStatus.UNCONFIRMED);
+        }
 
         userStorage.updateUser(user);
-        userStorage.updateUser(friend);
     }
 
+    @Transactional
     public void removeFriend(long userId, long friendId) {
         User user = userStorage.getUserById(userId);
         User friend = userStorage.getUserById(friendId);
 
-        user.getFriends().remove(friendId);
-        friend.getFriends().remove(userId);
+        FriendshipStatus status = user.getFriends().remove(friendId);
+        if (status != null && friend.getFriends().containsKey(userId)) {
+            friend.getFriends().put(userId, FriendshipStatus.UNCONFIRMED);
+            userStorage.updateUser(friend);
+        }
 
         userStorage.updateUser(user);
-        userStorage.updateUser(friend);
     }
 
     public List<User> getUserFriends(long userId) {
@@ -62,7 +78,7 @@ public class UserService {
 
         List<User> userFriends = new ArrayList<>();
 
-        for (Long friendId : user.getFriends()) {
+        for (Long friendId : user.getFriends().keySet()) {
             User friend = userStorage.getUserById(friendId);
             userFriends.add(friend);
         }
@@ -76,8 +92,8 @@ public class UserService {
 
         List<User> commonFriends = new ArrayList<>();
 
-        for (Long friendId : user.getFriends()) {
-            if (otherUser.getFriends().contains(friendId)) {
+        for (Long friendId : user.getFriends().keySet()) {
+            if (otherUser.getFriends().containsKey(friendId)) {
                 User commonFriend = userStorage.getUserById(friendId);
                 commonFriends.add(commonFriend);
             }

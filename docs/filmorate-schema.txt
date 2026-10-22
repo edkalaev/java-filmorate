@@ -1,0 +1,101 @@
+
+// Схема в формате DBML. Вставьте содержимое файла в редактор https://dbdiagram.io
+Table users {
+  id bigint [pk, increment]
+  email varchar [not null]
+  login varchar [not null]
+  name varchar [not null]
+  birthday date
+
+  Note: 'Имя по умолчанию равно логину. Дата рождения может отсутствовать.'
+}
+
+Table films {
+  id bigint [pk, increment]
+  name varchar [not null]
+  description varchar(200)
+  release_date date
+  duration integer [not null]
+  mpa_id integer
+
+  checks {
+    `duration > 0` [name: 'chk_film_duration']
+    `release_date IS NULL OR release_date >= DATE '1895-12-28'` [name: 'chk_film_release_date']
+  }
+
+  Note: 'MPA и дата релиза допускают NULL, как в текущей модели Film.'
+}
+
+Table mpa_ratings {
+  id integer [pk]
+  name varchar(5) [not null, unique]
+  description varchar [not null]
+
+  Note: 'Справочник: G, PG, PG-13, R, NC-17.'
+}
+
+Table genres {
+  id integer [pk]
+  code varchar(20) [not null, unique]
+  name varchar [not null, unique]
+
+  Note: 'Справочник жанров. API использует id и name; code — внутренний код жанра.'
+}
+
+Table film_genres {
+  film_id bigint [not null]
+  genre_id integer [not null]
+
+  indexes {
+    (film_id, genre_id) [pk]
+    genre_id
+  }
+
+  Note: 'Одна строка — один жанр одного фильма. Составной PK запрещает повторы.'
+}
+
+Table film_likes {
+  film_id bigint [not null]
+  user_id bigint [not null]
+
+  indexes {
+    (film_id, user_id) [pk]
+    user_id
+  }
+
+  Note: 'Одна строка — один лайк пользователя. Количество лайков вычисляется через COUNT.'
+}
+
+Table friendship_statuses {
+  id integer [pk]
+  code varchar(20) [not null, unique]
+  name varchar [not null, unique]
+
+  Note: '1: UNCONFIRMED — Неподтверждённая; 2: CONFIRMED — Подтверждённая.'
+}
+
+Table friendships {
+  user_id bigint [not null]
+  friend_id bigint [not null]
+  status_id integer [not null]
+
+  indexes {
+    (user_id, friend_id) [pk]
+    friend_id
+  }
+
+  checks {
+    `user_id <> friend_id` [name: 'chk_friendship_not_self']
+  }
+
+  Note: 'Направленная связь. Запрос A → B: одна строка UNCONFIRMED. После принятия: A → B и B → A, обе CONFIRMED. Изменения обеих строк выполняются в одной транзакции.'
+}
+
+Ref: films.mpa_id > mpa_ratings.id [delete: restrict]
+Ref: film_genres.film_id > films.id [delete: cascade]
+Ref: film_genres.genre_id > genres.id [delete: restrict]
+Ref: film_likes.film_id > films.id [delete: cascade]
+Ref: film_likes.user_id > users.id [delete: cascade]
+Ref: friendships.user_id > users.id [delete: cascade]
+Ref: friendships.friend_id > users.id [delete: cascade]
+Ref: friendships.status_id > friendship_statuses.id [delete: restrict]
