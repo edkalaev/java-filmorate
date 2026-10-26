@@ -11,9 +11,12 @@ import ru.yandex.practicum.filmorate.storage.film.InMemoryFilmStorage;
 import ru.yandex.practicum.filmorate.storage.user.InMemoryUserStorage;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FilmControllerTest {
     private FilmController filmController;
@@ -42,6 +45,17 @@ class FilmControllerTest {
     }
 
     @Test
+    void shouldIgnoreInitialLikesWhenCreatingFilmInMemory() {
+        Film film = makeValidFilm();
+        film.setLikes(Set.of(1L));
+
+        Film created = filmController.createFilm(film);
+
+        assertTrue(created.getLikes().isEmpty());
+        assertTrue(filmController.getFilmById(created.getId()).getLikes().isEmpty());
+    }
+
+    @Test
     void shouldUpdateFilmWithValidFields() {
         Film film = makeValidFilm();
         Film createdFilm = filmController.createFilm(film);
@@ -60,6 +74,22 @@ class FilmControllerTest {
         assertEquals("Updated description", result.getDescription());
         assertEquals(LocalDate.of(2001, 1, 1), result.getReleaseDate());
         assertEquals(150, result.getDuration());
+    }
+
+    @Test
+    void shouldFindPopularFilmsInMemoryWithStableOrderAndLimit() {
+        InMemoryFilmStorage storage = new InMemoryFilmStorage();
+        Film first = storage.create(makeValidFilm());
+        Film second = storage.create(makeValidFilm());
+        Film third = storage.create(makeValidFilm());
+        storage.addLike(second.getId(), 1L);
+
+        assertEquals(List.of(second), storage.getPopularFilms(1));
+
+        storage.addLike(first.getId(), 1L);
+
+        assertEquals(List.of(first, second, third), storage.getPopularFilms(10));
+        assertTrue(storage.getPopularFilms(0).isEmpty());
     }
 
     @Test
