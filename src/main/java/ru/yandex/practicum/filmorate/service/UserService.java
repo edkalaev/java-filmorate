@@ -9,7 +9,6 @@ import ru.yandex.practicum.filmorate.model.FriendshipStatus;
 import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -74,31 +73,10 @@ public class UserService {
     }
 
     public List<User> getUserFriends(long userId) {
-        User user = userStorage.getUserById(userId);
-
-        List<User> userFriends = new ArrayList<>();
-
-        for (Long friendId : user.getFriends().keySet()) {
-            User friend = userStorage.getUserById(friendId);
-            userFriends.add(friend);
-        }
-
-        return userFriends;
+        return userStorage.getUserFriends(userId);
     }
 
     public List<User> getCommonFriends(long userId, long otherUserId) {
-        User user = userStorage.getUserById(userId);
-        User otherUser = userStorage.getUserById(otherUserId);
-
-        List<User> commonFriends = new ArrayList<>();
-
-        for (Long friendId : user.getFriends().keySet()) {
-            if (otherUser.getFriends().containsKey(friendId)) {
-                User commonFriend = userStorage.getUserById(friendId);
-                commonFriends.add(commonFriend);
-            }
-        }
-
-        return commonFriends;
+        return userStorage.getCommonFriends(userId, otherUserId);
     }
 }

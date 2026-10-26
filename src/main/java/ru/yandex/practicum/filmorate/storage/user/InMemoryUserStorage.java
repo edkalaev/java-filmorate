@@ -8,6 +8,7 @@ import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.model.User;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -30,6 +31,26 @@ public class InMemoryUserStorage implements UserStorage {
             throw new NotFoundException("Пользователь с id = \" + id + \" не найден");
         }
         return user;
+    }
+
+    @Override
+    public List<User> getUserFriends(long userId) {
+        User user = getUserById(userId);
+        return user.getFriends().keySet().stream()
+                .sorted()
+                .map(this::getUserById)
+                .toList();
+    }
+
+    @Override
+    public List<User> getCommonFriends(long userId, long otherUserId) {
+        User user = getUserById(userId);
+        User otherUser = getUserById(otherUserId);
+        return user.getFriends().keySet().stream()
+                .filter(otherUser.getFriends()::containsKey)
+                .sorted()
+                .map(this::getUserById)
+                .toList();
     }
 
     @Override

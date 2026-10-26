@@ -17,6 +17,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -230,6 +232,25 @@ class CatalogApiTest {
     }
 
     @Test
+    void shouldIgnoreInitialLikesAndReturnLikesAddedThroughDedicatedEndpoint() throws Exception {
+        long userId = createUser("viewer");
+        ObjectNode request = (ObjectNode) objectMapper.readTree(FILM_REQUEST);
+        request.set("likes", objectMapper.createArrayNode().add(userId).add(999999999L));
+
+        ObjectNode film = createFilm(request.toString());
+        long filmId = film.path("id").asLong();
+
+        assertEquals(objectMapper.createArrayNode(), film.path("likes"));
+        assertEquals(0, count("film_likes"));
+        mockMvc.perform(get("/films/{id}", filmId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.likes", hasSize(0)));
+        mockMvc.perform(put("/films/{id}/like/{userId}", filmId, userId)).andExpect(status().isOk());
+        mockMvc.perform(get("/films/{id}", filmId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.likes", hasSize(1)))
+                .andExpect(jsonPath("$.likes[0]").value(userId));
+    }
+
+    @Test
     void shouldKeepLikesWhenUpdatingFilmAndAllowRemovingThem() throws Exception {
         long userId = createUser("viewer");
         ObjectNode film = createFilm(FILM_REQUEST);
@@ -243,11 +264,36 @@ class CatalogApiTest {
         ObjectNode update = (ObjectNode) objectMapper.readTree(FILM_REQUEST);
         update.put("id", filmId);
         update.put("name", "Updated after liking");
+        update.set("likes", objectMapper.readTree("[999999999]"));
         mockMvc.perform(put("/films").contentType(MediaType.APPLICATION_JSON).content(update.toString()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.likes", hasSize(1)));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.likes", hasSize(1)))
+                .andExpect(jsonPath("$.likes[0]").value(userId));
         mockMvc.perform(delete("/films/{id}/like/{userId}", filmId, userId)).andExpect(status().isOk());
         mockMvc.perform(get("/films/{id}", filmId))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.likes", hasSize(0)));
+    }
+
+    @Test
+    void shouldApplyDefaultAndExplicitLimitsToPopularFilms() throws Exception {
+        List<Long> ids = new ArrayList<>();
+        for (int index = 0; index < 12; index++) {
+            ids.add(createFilm(FILM_REQUEST).path("id").asLong());
+        }
+
+        mockMvc.perform(get("/films/popular"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(10)))
+                .andExpect(jsonPath("$[0].id").value(ids.getFirst()))
+                .andExpect(jsonPath("$[9].id").value(ids.get(9)));
+        mockMvc.perform(get("/films/popular").param("count", "20"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(12)));
+        mockMvc.perform(get("/films/popular").param("count", "0"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "invalid"})
+    void shouldRejectInvalidPopularLimit(String count) throws Exception {
+        mockMvc.perform(get("/films/popular").param("count", count)).andExpect(status().isBadRequest());
     }
 
     @Test

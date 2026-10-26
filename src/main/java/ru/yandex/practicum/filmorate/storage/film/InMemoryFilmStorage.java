@@ -7,7 +7,10 @@ import ru.yandex.practicum.filmorate.exception.ConditionsNotMetException;
 import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.model.Film;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -27,6 +30,7 @@ public class InMemoryFilmStorage implements FilmStorage {
     @Override
     public Film create(Film film) {
         film.setId(getFilmId());
+        film.setLikes(new HashSet<>());
         films.put(film.getId(), film);
 
         log.info("Добавлен фильм: id={}, name={}",
@@ -46,6 +50,16 @@ public class InMemoryFilmStorage implements FilmStorage {
         }
 
         return film;
+    }
+
+    @Override
+    public List<Film> getPopularFilms(int count) {
+        return films.values().stream()
+                .sorted(Comparator.comparingInt((Film film) -> film.getLikes().size())
+                        .reversed()
+                        .thenComparing(Film::getId))
+                .limit(count)
+                .toList();
     }
 
     @Override
@@ -69,12 +83,23 @@ public class InMemoryFilmStorage implements FilmStorage {
             );
         }
 
+        film.setLikes(new HashSet<>(films.get(film.getId()).getLikes()));
         films.put(film.getId(), film);
 
         log.info("Обновлён фильм: id={}, name={}",
                 film.getId(), film.getName());
 
         return film;
+    }
+
+    @Override
+    public void addLike(long filmId, long userId) {
+        getFilmById(filmId).getLikes().add(userId);
+    }
+
+    @Override
+    public void removeLike(long filmId, long userId) {
+        getFilmById(filmId).getLikes().remove(userId);
     }
 
     @Override

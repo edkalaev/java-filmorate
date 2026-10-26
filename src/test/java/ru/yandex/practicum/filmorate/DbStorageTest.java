@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import ru.yandex.practicum.filmorate.exception.ConditionsNotMetException;
 import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.model.Film;
@@ -21,11 +22,14 @@ import ru.yandex.practicum.filmorate.storage.film.FilmStorage;
 import ru.yandex.practicum.filmorate.storage.user.UserDbStorage;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,6 +38,11 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:db-storage-test;DB_CLOSE_DELAY=-1")
 class DbStorageTest {
@@ -154,9 +163,9 @@ class DbStorageTest {
         film.setId(999L);
         film.setMpa(new Mpa(3, "PG-13"));
         film.getGenres().addAll(Set.of(new Genre(1, "Комедия"), new Genre(2, "Драма")));
-        film.getLikes().add(user.getId());
 
-        Film created = filmStorage.create(film);
+        Film created = createLikedFilm(film, user.getId());
+        film.setLikes(Set.of(user.getId()));
         Film loaded = filmStorage.getFilmById(created.getId());
 
         assertTrue(created.getId() > 0);
@@ -174,8 +183,7 @@ class DbStorageTest {
         Film first = makeFilm("First");
         first.setMpa(new Mpa(3, "PG-13"));
         first.getGenres().add(new Genre(1, "Комедия"));
-        first.getLikes().add(user.getId());
-        first = filmStorage.create(first);
+        first = createLikedFilm(first, user.getId());
         Film second = makeFilm("Second");
         second.setMpa(new Mpa(5, "NC-17"));
         second.getGenres().add(new Genre(6, "Боевик"));
@@ -195,14 +203,13 @@ class DbStorageTest {
     }
 
     @Test
-    void shouldUpdateFilmFieldsAndReplaceGenresAndLikes() {
+    void shouldUpdateFilmFieldsAndGenresWithoutChangingLikes() {
         User firstUser = userStorage.createUser(makeUser("first"));
         User secondUser = userStorage.createUser(makeUser("second"));
         Film film = makeFilm("First");
         film.setMpa(new Mpa(1, "G"));
         film.getGenres().add(new Genre(1, "Комедия"));
-        film.getLikes().add(firstUser.getId());
-        Film created = filmStorage.create(film);
+        Film created = createLikedFilm(film, firstUser.getId());
         created.setName("Updated");
         created.setDescription("Updated description");
         created.setReleaseDate(LocalDate.of(2020, 1, 1));
@@ -211,7 +218,10 @@ class DbStorageTest {
         created.setGenres(Set.of(new Genre(6, "Боевик"), new Genre(4, "Триллер")));
         created.setLikes(Set.of(secondUser.getId()));
 
-        assertEquals(created, filmStorage.update(created));
+        Film updated = filmStorage.update(created);
+        assertEquals(Set.of(firstUser.getId()), updated.getLikes());
+        created.setLikes(Set.of(firstUser.getId()));
+        assertEquals(created, updated);
         assertEquals(created, filmStorage.getFilmById(created.getId()));
         assertEquals(2, count("film_genres"));
         assertEquals(1, count("film_likes"));
@@ -220,9 +230,29 @@ class DbStorageTest {
         created.setReleaseDate(null);
         created.setGenres(Set.of());
         created.setLikes(Set.of());
-        assertEquals(created, filmStorage.update(created));
+        Film withoutGenres = filmStorage.update(created);
+        assertEquals(Set.of(firstUser.getId()), withoutGenres.getLikes());
+        created.setLikes(Set.of(firstUser.getId()));
+        assertEquals(created, withoutGenres);
         assertEquals(0, count("film_genres"));
-        assertEquals(0, count("film_likes"));
+        assertEquals(1, count("film_likes"));
+    }
+
+    @Test
+    void shouldIgnoreLikesFromFilmUpdateEvenWhenTheyContainUnknownUsers() {
+        User user = userStorage.createUser(makeUser("viewer"));
+        Film film = makeFilm("First");
+        Film created = createLikedFilm(film, user.getId());
+        created.setName("Updated");
+        created.setLikes(Set.of(Long.MAX_VALUE));
+
+        Film updated = filmStorage.update(created);
+
+        assertEquals("Updated", updated.getName());
+        assertEquals(Set.of(user.getId()), updated.getLikes());
+        assertEquals(1, count("film_likes"));
+        created.setLikes(null);
+        assertEquals(Set.of(user.getId()), filmStorage.update(created).getLikes());
     }
 
     @Test
@@ -239,8 +269,7 @@ class DbStorageTest {
         User user = userStorage.createUser(makeUser("first"));
         Film film = makeFilm("First");
         film.getGenres().add(new Genre(1, "Комедия"));
-        film.getLikes().add(user.getId());
-        Film created = filmStorage.create(film);
+        Film created = createLikedFilm(film, user.getId());
 
         filmStorage.deleteFilm(created.getId());
 
@@ -257,8 +286,7 @@ class DbStorageTest {
         userService.addFriend(first.getId(), second.getId());
         userService.addFriend(second.getId(), first.getId());
         Film film = makeFilm("First");
-        film.getLikes().add(first.getId());
-        film = filmStorage.create(film);
+        film = createLikedFilm(film, first.getId());
 
         userStorage.deleteUser(first.getId());
 
@@ -306,8 +334,78 @@ class DbStorageTest {
     }
 
     @Test
+    void shouldLoadAllFriendsInOneQueryIncludingTheirRelationships() throws SQLException {
+        User owner = userStorage.createUser(makeUser("owner"));
+        User first = userStorage.createUser(makeUser("first"));
+        User second = userStorage.createUser(makeUser("second"));
+        User outsider = userStorage.createUser(makeUser("outsider"));
+        userService.addFriend(owner.getId(), first.getId());
+        userService.addFriend(owner.getId(), second.getId());
+        userService.addFriend(first.getId(), owner.getId());
+        userService.addFriend(first.getId(), outsider.getId());
+        userService.addFriend(second.getId(), outsider.getId());
+        userService.addFriend(outsider.getId(), owner.getId());
+        List<User> expected = List.of(userStorage.getUserById(first.getId()),
+                userStorage.getUserById(second.getId()));
+
+        List<User> friends = executeWithSingleQuery(service -> service.getUserFriends(owner.getId()));
+
+        assertEquals(expected, friends);
+        assertEquals(Map.of(owner.getId(), FriendshipStatus.CONFIRMED,
+                outsider.getId(), FriendshipStatus.UNCONFIRMED), friends.getFirst().getFriends());
+        assertEquals(Map.of(outsider.getId(), FriendshipStatus.UNCONFIRMED), friends.getLast().getFriends());
+    }
+
+    @Test
+    void shouldLoadCommonFriendsInOneQueryIncludingTheirRelationships() throws SQLException {
+        User owner = userStorage.createUser(makeUser("owner"));
+        User otherOwner = userStorage.createUser(makeUser("other"));
+        User first = userStorage.createUser(makeUser("first"));
+        User second = userStorage.createUser(makeUser("second"));
+        User outsider = userStorage.createUser(makeUser("outsider"));
+        userService.addFriend(owner.getId(), first.getId());
+        userService.addFriend(owner.getId(), second.getId());
+        userService.addFriend(owner.getId(), outsider.getId());
+        userService.addFriend(otherOwner.getId(), second.getId());
+        userService.addFriend(otherOwner.getId(), first.getId());
+        userService.addFriend(first.getId(), owner.getId());
+        userService.addFriend(first.getId(), second.getId());
+        List<User> expected = List.of(userStorage.getUserById(first.getId()),
+                userStorage.getUserById(second.getId()));
+
+        List<User> friends = executeWithSingleQuery(
+                service -> service.getCommonFriends(owner.getId(), otherOwner.getId()));
+
+        assertEquals(expected, friends);
+        assertEquals(2, friends.getFirst().getFriends().size());
+        assertTrue(friends.getLast().getFriends().isEmpty());
+        assertEquals(userService.getUserFriends(owner.getId()), executeWithSingleQuery(
+                service -> service.getCommonFriends(owner.getId(), owner.getId())));
+    }
+
+    @Test
+    void shouldDistinguishMissingUsersFromEmptyFriendListsInOneQuery() throws SQLException {
+        User first = userStorage.createUser(makeUser("first"));
+        User second = userStorage.createUser(makeUser("second"));
+        assertTrue(executeWithSingleQuery(service -> service.getUserFriends(first.getId())).isEmpty());
+        assertTrue(executeWithSingleQuery(
+                service -> service.getCommonFriends(first.getId(), second.getId())).isEmpty());
+        userService.addFriend(first.getId(), second.getId());
+        assertTrue(executeWithSingleQuery(
+                service -> service.getCommonFriends(first.getId(), second.getId())).isEmpty());
+
+        assertThrows(NotFoundException.class,
+                () -> executeWithSingleQuery(service -> service.getUserFriends(Long.MAX_VALUE)));
+        assertThrows(NotFoundException.class, () -> executeWithSingleQuery(
+                service -> service.getCommonFriends(Long.MAX_VALUE, first.getId())));
+        assertThrows(NotFoundException.class, () -> executeWithSingleQuery(
+                service -> service.getCommonFriends(first.getId(), Long.MAX_VALUE)));
+    }
+
+    @Test
     void shouldPersistLikesAndFindPopularFilms() {
         User user = userStorage.createUser(makeUser("first"));
+        User otherUser = userStorage.createUser(makeUser("second"));
         Film unpopular = filmStorage.create(makeFilm("Unpopular"));
         Film popular = filmStorage.create(makeFilm("Popular"));
         filmService.addLike(popular.getId(), user.getId());
@@ -317,20 +415,90 @@ class DbStorageTest {
         assertEquals(List.of(filmStorage.getFilmById(popular.getId())), filmService.getPopularFilms(1));
         assertTrue(filmStorage.getFilmById(unpopular.getId()).getLikes().isEmpty());
 
+        filmService.addLike(popular.getId(), otherUser.getId());
         filmService.removeLike(popular.getId(), user.getId());
+        filmService.removeLike(popular.getId(), user.getId());
+        assertEquals(Set.of(otherUser.getId()), filmStorage.getFilmById(popular.getId()).getLikes());
+        filmService.removeLike(popular.getId(), otherUser.getId());
         assertTrue(filmStorage.getFilmById(popular.getId()).getLikes().isEmpty());
     }
 
     @Test
-    void shouldRollbackFilmCreationWhenLikeReferencesUnknownUser() {
+    void shouldSelectPopularFilmsWithLimitAndLoadOnlyTheirRelations() {
+        User firstUser = userStorage.createUser(makeUser("first"));
+        User secondUser = userStorage.createUser(makeUser("second"));
+        Film zeroLikes = filmStorage.create(makeFilm("No likes"));
+        Film manyGenres = makeFilm("Many genres, one like");
+        manyGenres.setMpa(new Mpa(3, "PG-13"));
+        manyGenres.setGenres(Set.of(new Genre(1, "Комедия"), new Genre(2, "Драма"),
+                new Genre(3, "Мультфильм"), new Genre(4, "Триллер")));
+        manyGenres = createLikedFilm(manyGenres, firstUser.getId());
+        Film winner = makeFilm("Two likes");
+        winner.setMpa(new Mpa(5, "NC-17"));
+        winner.getGenres().add(new Genre(6, "Боевик"));
+        winner = createLikedFilm(winner, firstUser.getId());
+        filmService.addLike(winner.getId(), secondUser.getId());
+        winner = filmStorage.getFilmById(winner.getId());
+        Film anotherZero = filmStorage.create(makeFilm("Another film without likes"));
+
+        assertEquals(List.of(winner), filmService.getPopularFilms(1));
+        assertEquals(List.of(winner, manyGenres), filmService.getPopularFilms(2));
+        assertEquals(List.of(winner, manyGenres, zeroLikes, anotherZero), filmService.getPopularFilms(10));
+    }
+
+    @Test
+    void shouldOrderEqualLikeCountsByFilmIdAndRefreshOrderAfterRemovingLike() {
+        User user = userStorage.createUser(makeUser("viewer"));
+        Film firstZero = filmStorage.create(makeFilm("First zero"));
+        Film firstLiked = filmStorage.create(makeFilm("First liked"));
+        Film secondZero = filmStorage.create(makeFilm("Second zero"));
+        Film secondLiked = filmStorage.create(makeFilm("Second liked"));
+        filmService.addLike(secondLiked.getId(), user.getId());
+        filmService.addLike(firstLiked.getId(), user.getId());
+
+        assertEquals(List.of(firstLiked.getId(), secondLiked.getId(), firstZero.getId(), secondZero.getId()),
+                filmService.getPopularFilms(10).stream().map(Film::getId).toList());
+
+        filmService.removeLike(firstLiked.getId(), user.getId());
+
+        assertEquals(List.of(secondLiked.getId(), firstZero.getId(), firstLiked.getId(), secondZero.getId()),
+                filmService.getPopularFilms(10).stream().map(Film::getId).toList());
+    }
+
+    @Test
+    void shouldHandleEmptyPopularListZeroLimitAndRejectNegativeLimit() {
+        assertTrue(filmService.getPopularFilms(10).isEmpty());
+        filmStorage.create(makeFilm("First"));
+
+        assertTrue(filmService.getPopularFilms(0).isEmpty());
+        assertThrows(ConditionsNotMetException.class, () -> filmService.getPopularFilms(-1));
+    }
+
+    @Test
+    void shouldRejectLikesForMissingFilmOrUser() {
+        User user = userStorage.createUser(makeUser("viewer"));
+        Film film = filmStorage.create(makeFilm("First"));
+
+        assertThrows(NotFoundException.class, () -> filmService.addLike(Long.MAX_VALUE, user.getId()));
+        assertThrows(NotFoundException.class, () -> filmService.removeLike(Long.MAX_VALUE, user.getId()));
+        assertThrows(NotFoundException.class, () -> filmService.addLike(film.getId(), Long.MAX_VALUE));
+        assertThrows(NotFoundException.class, () -> filmService.removeLike(film.getId(), Long.MAX_VALUE));
+        assertEquals(0, count("film_likes"));
+    }
+
+    @Test
+    void shouldIgnoreInitialLikesWhenCreatingFilm() {
+        User user = userStorage.createUser(makeUser("viewer"));
         Film film = makeFilm("First");
         film.getGenres().add(new Genre(1, "Комедия"));
-        film.getLikes().add(Long.MAX_VALUE);
+        film.setLikes(Set.of(user.getId(), Long.MAX_VALUE));
 
-        assertThrows(DataIntegrityViolationException.class, () -> filmStorage.create(film));
+        Film created = filmStorage.create(film);
 
-        assertTrue(filmStorage.findAll().isEmpty());
-        assertEquals(0, count("film_genres"));
+        assertTrue(created.getLikes().isEmpty());
+        assertTrue(filmStorage.getFilmById(created.getId()).getLikes().isEmpty());
+        assertEquals(1, count("films"));
+        assertEquals(1, count("film_genres"));
         assertEquals(0, count("film_likes"));
     }
 
@@ -339,16 +507,19 @@ class DbStorageTest {
         User user = userStorage.createUser(makeUser("first"));
         Film film = makeFilm("First");
         film.getGenres().add(new Genre(1, "Комедия"));
-        film.getLikes().add(user.getId());
-        Film original = filmStorage.create(film);
+        Film original = createLikedFilm(film, user.getId());
         Film changed = filmStorage.getFilmById(original.getId());
         changed.setName("Should be rolled back");
         changed.setGenres(Set.of(new Genre(6, "Боевик")));
         changed.setLikes(Set.of(Long.MAX_VALUE));
 
-        assertThrows(DataIntegrityViolationException.class, () -> filmStorage.update(changed));
-
-        assertEquals(original, filmStorage.getFilmById(original.getId()));
+        jdbcTemplate.execute("ALTER TABLE film_genres ADD CONSTRAINT test_reject_updated_genre CHECK (genre_id <> 6)");
+        try {
+            assertThrows(DataIntegrityViolationException.class, () -> filmStorage.update(changed));
+            assertEquals(original, filmStorage.getFilmById(original.getId()));
+        } finally {
+            jdbcTemplate.execute("ALTER TABLE film_genres DROP CONSTRAINT test_reject_updated_genre");
+        }
     }
 
     @Test
@@ -391,6 +562,25 @@ class DbStorageTest {
         assertTrue(filmStorage.findAll().isEmpty());
         assertDoesNotThrow(() -> userStorage.deleteUser(Long.MAX_VALUE));
         assertDoesNotThrow(() -> filmStorage.deleteFilm(Long.MAX_VALUE));
+    }
+
+    private List<User> executeWithSingleQuery(Function<UserService, List<User>> operation) throws SQLException {
+        try (Connection connection = spy(jdbcTemplate.getDataSource().getConnection())) {
+            JdbcTemplate template = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+            UserService service = new UserService(new UserDbStorage(template));
+            try {
+                return operation.apply(service);
+            } finally {
+                verify(connection, times(1)).prepareStatement(anyString());
+                verify(connection, never()).createStatement();
+            }
+        }
+    }
+
+    private Film createLikedFilm(Film film, long userId) {
+        Film created = filmStorage.create(film);
+        filmService.addLike(created.getId(), userId);
+        return filmStorage.getFilmById(created.getId());
     }
 
     private int count(String table) {

@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Repository("filmDbStorage")
 @Transactional(readOnly = true)
@@ -62,6 +63,20 @@ public class FilmDbStorage implements FilmStorage {
     }
 
     @Override
+    public List<Film> getPopularFilms(int count) {
+        List<Film> films = jdbcTemplate.query(SELECT_FILMS + """
+                LEFT JOIN (
+                    SELECT film_id, COUNT(*) AS likes_count
+                    FROM film_likes
+                    GROUP BY film_id
+                ) AS likes ON likes.film_id = f.id
+                ORDER BY COALESCE(likes.likes_count, 0) DESC, f.id ASC
+                LIMIT ?
+                """, FILM_ROW_MAPPER, count);
+        return loadRelations(films);
+    }
+
+    @Override
     @Transactional
     public Film create(Film film) {
         validateReferences(film);
@@ -72,7 +87,7 @@ public class FilmDbStorage implements FilmStorage {
                 .addValue("duration", film.getDuration())
                 .addValue("mpa_id", getMpaId(film.getMpa()), Types.INTEGER);
         film.setId(filmInsert.executeAndReturnKey(parameters).longValue());
-        saveRelations(film);
+        saveGenres(film);
         return getFilmById(film.getId());
     }
 
@@ -92,9 +107,22 @@ public class FilmDbStorage implements FilmStorage {
             throw new NotFoundException("Фильм с id = " + film.getId() + " не найден");
         }
         jdbcTemplate.update("DELETE FROM film_genres WHERE film_id = ?", film.getId());
-        jdbcTemplate.update("DELETE FROM film_likes WHERE film_id = ?", film.getId());
-        saveRelations(film);
+        saveGenres(film);
         return getFilmById(film.getId());
+    }
+
+    @Override
+    @Transactional
+    public void addLike(long filmId, long userId) {
+        jdbcTemplate.update("""
+                MERGE INTO film_likes (film_id, user_id) KEY (film_id, user_id) VALUES (?, ?)
+                """, filmId, userId);
+    }
+
+    @Override
+    @Transactional
+    public void removeLike(long filmId, long userId) {
+        jdbcTemplate.update("DELETE FROM film_likes WHERE film_id = ? AND user_id = ?", filmId, userId);
     }
 
     @Override
@@ -121,12 +149,10 @@ public class FilmDbStorage implements FilmStorage {
             genreStorage.getById(genre.getId());
         }
         Mpa mpa = film.getMpa();
-        if (mpa != null) {
-            if (mpa.getId() == null || mpa.getId() <= 0) {
-                throw new ConditionsNotMetException("Id рейтинга MPA должен быть указан и быть положительным");
-            }
-            mpaStorage.getById(mpa.getId());
+        if (mpa != null && (mpa.getId() == null || mpa.getId() <= 0)) {
+            throw new ConditionsNotMetException("Id рейтинга MPA должен быть указан и быть положительным");
         }
+        Optional.ofNullable(mpa).map(Mpa::getId).ifPresent(mpaStorage::getById);
     }
 
     private List<Film> loadRelations(List<Film> films) {
@@ -156,13 +182,11 @@ public class FilmDbStorage implements FilmStorage {
         return films;
     }
 
-    private void saveRelations(Film film) {
+    private void saveGenres(Film film) {
         for (Genre genre : film.getGenres()) {
             jdbcTemplate.update("INSERT INTO film_genres (film_id, genre_id) VALUES (?, ?)",
                     film.getId(), genre.getId());
         }
-        for (Long userId : film.getLikes()) {
-            jdbcTemplate.update("INSERT INTO film_likes (film_id, user_id) VALUES (?, ?)", film.getId(), userId);
-        }
     }
+
 }

@@ -2,8 +2,8 @@
 // Схема в формате DBML. Вставьте содержимое файла в редактор https://dbdiagram.io
 Table users {
   id bigint [pk, increment]
-  email varchar [not null]
-  login varchar [not null]
+  email varchar [not null, unique]
+  login varchar [not null, unique]
   name varchar [not null]
   birthday date
 

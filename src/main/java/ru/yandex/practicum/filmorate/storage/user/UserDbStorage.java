@@ -11,9 +11,13 @@ import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.model.FriendshipStatus;
 import ru.yandex.practicum.filmorate.model.User;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +52,46 @@ public class UserDbStorage implements UserStorage {
             throw new NotFoundException("Пользователь с id = " + id + " не найден");
         }
         return loadFriends(users).getFirst();
+    }
+
+    @Override
+    public List<User> getUserFriends(long userId) {
+        return jdbcTemplate.query("""
+                SELECT friend.id, friend.email, friend.login, friend.name, friend.birthday,
+                       friend_links.friend_id AS related_friend_id, status.code
+                FROM users AS owner
+                LEFT JOIN friendships AS links ON links.user_id = owner.id
+                LEFT JOIN users AS friend ON friend.id = links.friend_id
+                LEFT JOIN friendships AS friend_links ON friend_links.user_id = friend.id
+                LEFT JOIN friendship_statuses AS status ON status.id = friend_links.status_id
+                WHERE owner.id = ?
+                ORDER BY friend.id, friend_links.friend_id
+                """, resultSet -> {
+                    return mapFriendUsers(resultSet, userId, null);
+                }, userId);
+    }
+
+    @Override
+    public List<User> getCommonFriends(long userId, long otherUserId) {
+        return jdbcTemplate.query("""
+                SELECT other_user.id AS other_user_id,
+                       friend.id, friend.email, friend.login, friend.name, friend.birthday,
+                       friend_links.friend_id AS related_friend_id, status.code
+                FROM users AS owner
+                LEFT JOIN users AS other_user ON other_user.id = ?
+                LEFT JOIN friendships AS links ON links.user_id = owner.id
+                    AND EXISTS (
+                        SELECT 1 FROM friendships AS other_links
+                        WHERE other_links.user_id = other_user.id AND other_links.friend_id = links.friend_id
+                    )
+                LEFT JOIN users AS friend ON friend.id = links.friend_id
+                LEFT JOIN friendships AS friend_links ON friend_links.user_id = friend.id
+                LEFT JOIN friendship_statuses AS status ON status.id = friend_links.status_id
+                WHERE owner.id = ?
+                ORDER BY friend.id, friend_links.friend_id
+                """, resultSet -> {
+                    return mapFriendUsers(resultSet, userId, otherUserId);
+                }, otherUserId, userId);
     }
 
     @Override
@@ -86,6 +130,31 @@ public class UserDbStorage implements UserStorage {
     @Transactional
     public void deleteUser(long id) {
         jdbcTemplate.update("DELETE FROM users WHERE id = ?", id);
+    }
+
+    private List<User> mapFriendUsers(ResultSet resultSet, long userId, Long otherUserId) throws SQLException {
+        if (!resultSet.next()) {
+            throw new NotFoundException("Пользователь с id = " + userId + " не найден");
+        }
+        if (otherUserId != null && resultSet.getObject("other_user_id", Long.class) == null) {
+            throw new NotFoundException("Пользователь с id = " + otherUserId + " не найден");
+        }
+        Map<Long, User> friendsById = new LinkedHashMap<>();
+        do {
+            Long friendId = resultSet.getObject("id", Long.class);
+            if (friendId != null) {
+                User friend = friendsById.get(friendId);
+                if (friend == null) {
+                    friend = USER_ROW_MAPPER.mapRow(resultSet, friendsById.size());
+                    friendsById.put(friendId, friend);
+                }
+                Long relatedFriendId = resultSet.getObject("related_friend_id", Long.class);
+                if (relatedFriendId != null) {
+                    friend.getFriends().put(relatedFriendId, FriendshipStatus.valueOf(resultSet.getString("code")));
+                }
+            }
+        } while (resultSet.next());
+        return new ArrayList<>(friendsById.values());
     }
 
     private List<User> loadFriends(List<User> users) {

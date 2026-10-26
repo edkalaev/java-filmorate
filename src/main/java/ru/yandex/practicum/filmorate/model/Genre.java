@@ -11,11 +11,10 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(of = "id")
 public class Genre {
     @NotNull(message = "Id жанра должен быть указан")
     @Positive(message = "Id жанра должен быть положительным")
-    @EqualsAndHashCode.Include
     private Integer id;
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
